@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>عائلة جكو جار</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Tahoma,sans-serif;background:#f0f2f5;color:#333;margin:0;padding:15px}
+.wrap{max-width:600px;margin:0 auto}
+h1{color:#1a2a3a;margin:0 0 5px;text-align:center}
+.sub{color:#666;font-size:14px;text-align:center;margin-bottom:16px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:13px;color:#555}
+.list{display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;padding:18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);border-right:6px solid #2563eb;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+.card .name{font-size:18px;font-weight:bold;color:#1e293b}.card .tag{font-size:13px;color:#64748b;margin-top:4px}
+.arrow{color:#2563eb;font-weight:bold}
+button{font-family:inherit;cursor:pointer}
+.back{background:#e2e8f0;border:none;padding:10px 18px;border-radius:8px;font-size:15px;font-weight:bold;margin-bottom:16px}
+.father{background:#1e293b;color:#fff;padding:16px;border-radius:12px;text-align:center;font-size:20px;font-weight:bold;margin-bottom:10px}
+.wife{background:#fff;border-radius:12px;padding:15px;margin-bottom:18px;border:1px solid #cbd5e1}
+.wt{font-size:16px;font-weight:bold;color:#059669;background:#ecfdf5;padding:10px 12px;border-radius:8px;margin-bottom:12px;border-right:4px solid #10b981}
+.wt.lk{cursor:pointer}.wt small{font-weight:normal;color:#2563eb}
+.ct{font-size:14px;font-weight:bold;color:#475569;margin:10px 5px 8px}
+.kids{display:flex;flex-direction:column;gap:8px}
+.kid{background:#f8fafc;padding:12px 15px;border-radius:8px;border-right:4px solid #f59e0b;font-weight:bold;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer}
+.kid small{font-size:12px;color:#2563eb;font-weight:normal}
+.empty{color:#94a3b8;text-align:center;padding:20px}
+.adm{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.adm button,.mini{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
+.del{color:#dc2626}
+.big{width:100%;margin-top:12px;background:#2563eb;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:bold}
+.big.gray{background:#475569}
+.box{background:#fff;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+label{font-size:13px;color:#555}
+input,select{font:inherit;padding:11px;border-radius:8px;border:1px solid #cbd5e1;width:100%}
+.err{color:#dc2626;font-size:14px;min-height:18px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.modal .box{width:100%;max-width:340px}
+.row{display:flex;gap:8px}.row button{flex:1;padding:10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:15px}.row .g{background:#e2e8f0;color:#1e293b}
+.acc{background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;display:flex;flex-direction:column;gap:8px;font-size:14px;direction:ltr;text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyC7WVHTao8OaUQiV1IVp4tVyIULil9lXo4",
+  authDomain: "jekogar-family.firebaseapp.com",
+  projectId: "jekogar-family",
+  storageBucket: "jekogar-family.firebasestorage.app",
+  messagingSenderId: "847564258453",
+  appId: "1:847564258453:web:5091b87749b68b9ee6ef9c"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth(), db = firebase.firestore();
+const treeRef = db.collection('family').doc('tree');
+const app = document.getElementById('app');
+const ROLE = {admin:'مدير', supervisor:'مشرف', member:'عضو'};
+const G = [['m','ذكر'],['f','أنثى']];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let D = {people:{}, unions:{}}, user = null, role = null, stack = [], unsub = null, accounts = [], chain = Promise.resolve();
+const canEdit = () => role === 'admin' || role === 'supervisor';
+const P = id => D.people[id];
+const uid = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const errText = e => ({'auth/invalid-credential':'البريد أو كلمة السر غير صحيحة','auth/invalid-email':'البريد غير صالح','auth/weak-password':'كلمة السر ضعيفة (6 أحرف على الأقل)','auth/email-already-in-use':'هذا البريد مستخدم مسبقاً','auth/too-many-requests':'محاولات كثيرة، حاول لاحقاً'}[e.code] || e.message);
+
+// تحويل البيانات القديمة (زوجات داخل الشخص) إلى شجرة جديدة
+function norm(d){
+  d = d || {}; d.people = d.people || {}; d.unions = d.unions || {};
+  Object.keys(d.people).forEach(id => {
+    const p = d.people[id];
+    if (p.wives) {
+      p.wives.forEach(w => {
+        const kids = [];
+        (w.children || []).forEach(c => { let cid = c.id; if (!cid || !d.people[cid]) { cid = uid(); d.people[cid] = {name:c.name, gender:'m'}; } kids.push(cid); });
+        d.unions[uid()] = {h:id, hName:'', w:null, wName:w.name, kids};
+      });
+      delete p.wives;
+    }
+    if (!p.gender) p.gender = 'm';
+    delete p.tag;
+  });
+  return d;
+}
+
+// ===== الدخول =====
+function loginView(msg){
+  app.innerHTML = `<h1>عائلة جكو جار</h1><div class="sub">سجّل دخولك لعرض شجرة العائلة</div>
+  <div class="box"><input id="em" type="email" placeholder="البريد الإلكتروني" dir="ltr"><input id="pw" type="password" placeholder="كلمة السر" dir="ltr">
+  <div class="err" id="er">${esc(msg || '')}</div><button class="big" style="margin:0" onclick="login()">تسجيل الدخول</button></div>`;
+}
+async function login(){
+  try { await auth.signInWithEmailAndPassword(document.getElementById('em').value.trim(), document.getElementById('pw').value); }
+  catch(e){ document.getElementById('er').textContent = errText(e); }
+}
+auth.onAuthStateChanged(async u => {
+  if (unsub) { unsub(); unsub = null; }
+  user = u; role = null; stack = [];
+  if (!u) return loginView();
+  try {
+    const r = await db.collection('roles').doc(u.uid).get();
+    if (!r.exists) { await auth.signOut(); return loginView('حسابك غير مُفعّل، تواصل مع مدير العائلة'); }
+    role = r.data().role;
+    unsub = treeRef.onSnapshot(s => { if (s.exists) D = norm(s.data()); render(); }, () => render());
+    render();
+  } catch(e){ loginView(errText(e)); }
+});
+
+// ===== نافذة إدخال عامة =====
+function form(title, fields){ return new Promise(res => {
+  const m = document.createElement('div'); m.className = 'modal';
+  let h = `<div class="box"><div>${esc(title)}</div>`;
+  fields.forEach(f => {
+    if (f.label) h += `<label>${esc(f.label)}</label>`;
+    h += f.type === 'select'
+      ? `<select id="f_${f.id}">` + f.options.map(o => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('') + '</select>'
+      : `<input id="f_${f.id}" value="${esc(f.value || '')}">`;
+  });
+  h += '<div class="row"><button id="ok">موافق</button><button id="no" class="g">إلغاء</button></div></div>';
+  m.innerHTML = h; document.body.appendChild(m);
+  const first = m.querySelector('input'); if (first) first.focus();
+  const done = v => { m.remove(); res(v); };
+  m.querySelector('#ok').onclick = () => { const o = {}; fields.forEach(f => o[f.id] = m.querySelector('#f_' + f.id).value.trim()); done(o); };
+  m.querySelector('#no').onclick = () => done(null);
+}); }
+function commit(){ render(); chain = chain.then(() => treeRef.set(D)).catch(() => alert('تعذر الحفظ: ليست لديك صلاحية أو الاتصال ضعيف')); }
+
+// ===== مساعدات الشجرة =====
+const unionsOf = id => Object.entries(D.unions).filter(([k, u]) => u.h === id || u.w === id);
+const parentUnion = id => Object.values(D.unions).find(u => (u.kids || []).includes(id));
+const nameOf = (u, s) => (u[s] && P(u[s])) ? P(u[s]).name : (u[s + 'Name'] || '');
+const openPerson = id => { stack.push(id); render(); };
+const goBack = () => { stack.pop(); render(); };
+async function openAdmin(){ stack.push('__admin'); await loadAccounts(); }
+function removePerson(id){
+  Object.values(D.unions).forEach(u => {
+    if (u.kids) u.kids = u.kids.filter(x => x !== id);
+    if (u.h === id) { u.h = null; u.hName = P(id).name; }
+    if (u.w === id) { u.w = null; u.wName = P(id).name; }
+  });
+  delete D.people[id];
+}
+
+// ===== إجراءات التحرير (مدير ومشرف) =====
+async function addRoot(){ const f = await form('إضافة شخص جديد', [{id:'n', label:'الاسم'}, {id:'g', type:'select', label:'الجنس', options:G}]); if (!f || !f.n) return; D.people[uid()] = {name:f.n, gender:f.g}; commit(); }
+async function renamePerson(id){ const f = await form('تعديل الاسم', [{id:'n', value:P(id).name}]); if (!f || !f.n) return; P(id).name = f.n; commit(); }
+function toggleGender(id){ P(id).gender = P(id).gender === 'f' ? 'm' : 'f'; commit(); }
+async function addSpouse(id){
+  const p = P(id), male = p.gender !== 'f', opp = male ? 'f' : 'm';
+  const opts = [['', '— من خارج الشجرة —']].concat(Object.keys(D.people).filter(i => i !== id && (P(i).gender === 'f') === (opp === 'f')).map(i => [i, P(i).name]));
+  const f = await form(male ? 'إضافة زوجة' : 'إضافة زوج', [{id:'s', type:'select', label:'اختر من الشجرة (إن كانت موجودة)', options:opts}, {id:'n', label:'أو اكتب الاسم'}]);
+  if (!f || (!f.s && !f.n)) return;
+  const u = {h:null, hName:'', w:null, wName:'', kids:[]}, me = male ? 'h' : 'w', sp = male ? 'w' : 'h';
+  u[me] = id; if (f.s) u[sp] = f.s; else u[sp + 'Name'] = f.n;
+  D.unions[uid()] = u; commit();
+}
+async function renameSpouse(k, side){ const f = await form('تعديل الاسم', [{id:'n', value:D.unions[k][side + 'Name']}]); if (!f || !f.n) return; D.unions[k][side + 'Name'] = f.n; commit(); }
+async function addChild(k){
+  const f = await form('إضافة مولود', [{id:'n', label:'الاسم'}, {id:'g', type:'select', label:'الجنس', options:[['m','ابن'], ['f','ابنة']]}]);
+  if (!f || !f.n) return;
+  const id = uid(); D.people[id] = {name:f.n, gender:f.g};
+  D.unions[k].kids = (D.unions[k].kids || []).concat(id); commit();
+}
+async function delUnion(k){ if (!await form('حذف هذا الزواج؟ الأبناء لن يُحذفوا وسيظهرون في القائمة الرئيسية.', [])) return; delete D.unions[k]; commit(); }
+async function delChild(id){ if (!await form('حذف ' + P(id).name + ' نهائياً؟', [])) return; removePerson(id); commit(); }
+async function delPerson(id){ if (!await form('حذف ' + P(id).name + ' نهائياً؟', [])) return; removePerson(id); stack.pop(); commit(); }
+
+// ===== إدارة الحسابات (المدير فقط) =====
+async function loadAccounts(){ const s = await db.collection('roles').get(); accounts = s.docs.map(d => ({uid:d.id, ...d.data()})); render(); }
+async function createAccount(){
+  const email = document.getElementById('ne').value.trim(), pass = document.getElementById('np').value, r = document.getElementById('nr').value, er = document.getElementById('ner');
+  if (!email || pass.length < 6) { er.textContent = 'أدخل بريداً وكلمة سر (6 أحرف على الأقل)'; return; }
+  try {
+    const sec = firebase.apps.find(a => a.name === 'sec') || firebase.initializeApp(firebaseConfig, 'sec');
+    const c = await sec.auth().createUserWithEmailAndPassword(email, pass);
+    await db.collection('roles').doc(c.user.uid).set({email, role:r});
+    await sec.auth().signOut();
+    await loadAccounts();
+  } catch(e){ er.textContent = errText(e); }
+}
+async function setRole(u, r){ await db.collection('roles').doc(u).update({role:r}); await loadAccounts(); }
+async function revoke(u){ if (!await form('سحب صلاحية هذا الحساب؟ لن يتمكن من الدخول.', [])) return; await db.collection('roles').doc(u).delete(); await loadAccounts(); }
+
+// ===== العرض =====
+function render(){
+  if (!user || !role) return;
+  window.scrollTo(0, 0);
+  const bar = `<div class="top"><span>${esc(user.email)} · ${ROLE[role] || ''}</span><button class="mini" onclick="auth.signOut()">خروج</button></div>`;
+  const cur = stack[stack.length - 1];
+  if (cur === '__admin') return adminView(bar);
+  if (cur && !P(cur)) { stack.pop(); return render(); }
+  if (!cur) return homeView(bar);
+  const p = P(cur), a = canEdit(), male = p.gender !== 'f', sp = male ? 'w' : 'h';
+  let h = bar + '<button class="back" onclick="goBack()">رجوع ←</button>' + `<div class="father">${male ? '👨' : '👩'} ${esc(p.name)}</div>`;
+  const pu = parentUnion(cur);
+  if (pu) { const n = [nameOf(pu, 'h'), nameOf(pu, 'w')].filter(Boolean).join(' و '); if (n) h += `<div class="sub">${male ? 'ابن' : 'ابنة'} ${esc(n)}</div>`; }
+  if (a) h += `<div class="adm" style="margin:0 0 14px"><button onclick="renamePerson('${cur}')">✏️ الاسم</button><button onclick="toggleGender('${cur}')">⚥ الجنس</button><button onclick="addSpouse('${cur}')">➕ ${male ? 'زوجة' : 'زوج'}</button><button class="del" onclick="delPerson('${cur}')">🗑 حذف</button></div>`;
+  const us = unionsOf(cur);
+  if (!us.length) h += `<div class="empty">لا ${male ? 'زوجات' : 'أزواج'} مسجلون بعد</div>`;
+  us.forEach(([k, u]) => {
+    const sid = u[sp], has = sid && P(sid);
+    h += `<div class="wife"><div class="wt${has ? ' lk' : ''}" ${has ? `onclick="openPerson('${sid}')"` : ''}>${male ? 'الزوجة' : 'الزوج'}: ${esc(nameOf(u, sp) || '—')}${has ? ` <small>(افتح ${male ? 'صفحتها' : 'صفحته'} ←)</small>` : ''}</div><div class="ct">الأبناء:</div><div class="kids">`;
+    const ks = (u.kids || []).filter(P);
+    if (!ks.length) h += '<div class="empty" style="padding:6px">لا يوجد أبناء بعد</div>';
+    ks.forEach(c => { const q = P(c); h += `<div class="kid" onclick="openPerson('${c}')"><span>${q.gender === 'f' ? '👧' : '👦'} ${esc(q.name)}</span>` + (a ? `<button class="mini del" onclick="event.stopPropagation();delChild('${c}')">🗑</button>` : '<small>(افتح ←)</small>') + '</div>'; });
+    h += '</div>';
+    if (a) h += `<div class="adm"><button onclick="addChild('${k}')">➕ مولود</button>${has ? '' : `<button onclick="renameSpouse('${k}','${sp}')">✏️ الاسم</button>`}<button class="del" onclick="delUnion('${k}')">🗑 الزواج</button></div>`;
+    h += '</div>';
+  });
+  app.innerHTML = h;
+}
+function homeView(bar){
+  const kidSet = new Set(); Object.values(D.unions).forEach(u => (u.kids || []).forEach(c => kidSet.add(c)));
+  const roots = Object.keys(D.people).filter(i => !kidSet.has(i));
+  let h = bar + '<h1>عائلة جكو جار</h1><div class="sub">اختر أحد الأفراد لفتح صفحته</div><div class="list">';
+  roots.forEach(id => {
+    const p = P(id), n = unionsOf(id).reduce((s, [k, u]) => s + (u.kids || []).length, 0);
+    h += `<div class="card" onclick="openPerson('${id}')"><div><div class="name">${p.gender === 'f' ? '👩' : '👨'} ${esc(p.name)}</div><div class="tag">${n} من الأبناء</div></div><div class="arrow">عرض ←</div></div>`;
+  });
+  h += '</div>';
+  if (!roots.length) h += '<div class="empty">لا يوجد أشخاص بعد</div>';
+  if (canEdit()) h += '<button class="big" onclick="addRoot()">➕ إضافة شخص جديد</button>';
+  if (role === 'admin') h += '<button class="big gray" onclick="openAdmin()">👥 إدارة الحسابات والصلاحيات</button>';
+  app.innerHTML = h;
+}
+function adminView(bar){
+  let h = bar + '<button class="back" onclick="goBack()">رجوع ←</button><div class="father">إدارة الحسابات</div>' +
+    `<div class="box"><div>إنشاء حساب جديد</div><input id="ne" type="email" placeholder="البريد الإلكتروني" dir="ltr"><input id="np" type="text" placeholder="كلمة السر (6 أحرف على الأقل)" dir="ltr">
+    <select id="nr"><option value="member">عضو (تصفح فقط)</option><option value="supervisor">مشرف (إضافة وتعديل)</option><option value="admin">مدير</option></select>
+    <div class="err" id="ner"></div><button class="big" style="margin:0" onclick="createAccount()">إنشاء الحساب</button></div><div style="height:16px"></div>`;
+  accounts.forEach(a => {
+    h += `<div class="acc"><b>${esc(a.email)}</b><select onchange="setRole('${a.uid}',this.value)" ${a.uid === user.uid ? 'disabled' : ''}>` +
+      Object.keys(ROLE).map(k => `<option value="${k}" ${a.role === k ? 'selected' : ''}>${ROLE[k]}</option>`).join('') + '</select>' +
+      (a.uid === user.uid ? '' : `<button class="mini del" onclick="revoke('${a.uid}')">سحب الصلاحية</button>`) + '</div>';
+  });
+  app.innerHTML = h;
+}
+</script>
+</body>
+</html>

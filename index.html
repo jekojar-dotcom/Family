@@ -135,7 +135,7 @@ function commit(){ render(); chain = chain.then(() => treeRef.set(D)).catch(() =
 const unionsOf = id => Object.entries(D.unions).filter(([k, u]) => u.h === id || u.w === id);
 const parentUnion = id => Object.values(D.unions).find(u => (u.kids || []).includes(id));
 const nameOf = (u, s) => (u[s] && P(u[s])) ? P(u[s]).name : (u[s + 'Name'] || '');
-const clanOf = (u, s) => (u[s] && P(u[s])) ? (P(u[s]).clan || '') : (u[s + 'Clan'] || '');
+const clanOf = (u, s) => u[s + 'Clan'] || ((u[s] && P(u[s])) ? (P(u[s]).clan || '') : '');
 const clanTxt = (u, s, w) => { const c = clanOf(u, s); return c ? ` — خشم ${w}: ${esc(c)}` : ''; };
 const openPerson = id => { stack.push(id); render(); };
 const goBack = () => { stack.pop(); render(); };
@@ -157,8 +157,7 @@ const infoFields = (p = {}, withMom = false) => (withMom ? [
   {id:'st', type:'select', label:'الحالة', options:ST, value:p.status || 'alive'},
   {id:'bd', label:'تاريخ الميلاد (مثال: 1985 أو 1985-03-12)', value:p.bd || ''},
   {id:'co', label:'الدولة', value:p.country || ''},
-  {id:'ci', label:'المدينة', value:p.city || ''},
-  {id:'cl', label:'خشم البيت (عائلة الشخص)', value:p.clan || ''}]);
+  {id:'ci', label:'المدينة', value:p.city || ''}]);
 const ageOf = q => {
   if (q.status === 'dead') return '';
   const m = String(q.bd || '').match(/^(\d{4})(?:[-\/](\d{1,2})(?:[-\/](\d{1,2}))?)?/);
@@ -167,7 +166,7 @@ const ageOf = q => {
   if (m[2] && (n.getMonth() + 1 < +m[2] || (n.getMonth() + 1 === +m[2] && m[3] && n.getDate() < +m[3]))) a--;
   return a >= 0 && a < 130 ? String(a) : '';
 };
-const applyInfo = (p, f) => { p.status = f.st || 'alive'; delete p.age; p.bd = f.bd; p.country = f.co; p.city = f.ci; p.clan = f.cl; if (f.mn !== undefined) { p.momName = f.mn; p.momClan = f.mc; } };
+const applyInfo = (p, f) => { p.status = f.st || 'alive'; delete p.age; p.bd = f.bd; p.country = f.co; p.city = f.ci; if (f.mn !== undefined) { p.momName = f.mn; p.momClan = f.mc; } };
 const kidInfo = q => { const t = [ageOf(q) ? ageOf(q) + ' سنة' : '', q.status === 'dead' ? (q.gender === 'f' ? 'متوفاة' : 'متوفى') : ''].filter(Boolean).join(' · '); return t ? ` <small style="color:#64748b">(${esc(t)})</small>` : ''; };
 async function editInfo(id){ const f = await form('بيانات ' + P(id).name, infoFields(P(id), !parentUnion(id))); if (!f) return; applyInfo(P(id), f); commit(); }
 async function addRoot(){ const f = await form('إضافة شخص جديد', [{id:'n', label:'الاسم'}, {id:'g', type:'select', label:'الجنس', options:G}].concat(infoFields({}, true))); if (!f || !f.n) return; const p = {name:f.n, gender:f.g}; applyInfo(p, f); D.people[uid()] = p; commit(); }
@@ -176,13 +175,18 @@ function toggleGender(id){ P(id).gender = P(id).gender === 'f' ? 'm' : 'f'; comm
 async function addSpouse(id){
   const p = P(id), male = p.gender !== 'f', opp = male ? 'f' : 'm';
   const opts = [['', '— من خارج الشجرة —']].concat(Object.keys(D.people).filter(i => i !== id && (P(i).gender === 'f') === (opp === 'f')).map(i => [i, P(i).name]));
-  const f = await form(male ? 'إضافة زوجة' : 'إضافة زوج', [{id:'s', type:'select', label:'اختر من الشجرة (إن كانت موجودة)', options:opts}, {id:'n', label:'أو اكتب الاسم كاملاً'}, {id:'c', label:'خشم بيته/بيتها (عند كتابة الاسم)'}]);
+  const f = await form(male ? 'إضافة زوجة' : 'إضافة زوج', [{id:'s', type:'select', label:'اختر من الشجرة (إن كانت موجودة)', options:opts}, {id:'n', label:'أو اكتب الاسم كاملاً'}, {id:'c', label:'خشم بيته/بيتها'}]);
   if (!f || (!f.s && !f.n)) return;
   const u = {h:null, hName:'', w:null, wName:'', kids:[]}, me = male ? 'h' : 'w', sp = male ? 'w' : 'h';
-  u[me] = id; if (f.s) u[sp] = f.s; else { u[sp + 'Name'] = f.n; u[sp + 'Clan'] = f.c; }
+  u[me] = id; if (f.s) u[sp] = f.s; else u[sp + 'Name'] = f.n; u[sp + 'Clan'] = f.c;
   D.unions[uid()] = u; commit();
 }
-async function renameSpouse(k, side){ const f = await form('تعديل البيانات', [{id:'n', label:'الاسم كاملاً', value:D.unions[k][side + 'Name']}, {id:'c', label:'الخشم', value:D.unions[k][side + 'Clan'] || ''}]); if (!f || !f.n) return; D.unions[k][side + 'Name'] = f.n; D.unions[k][side + 'Clan'] = f.c; commit(); }
+async function renameSpouse(k, side){
+  const u = D.unions[k], linked = u[side] && P(u[side]);
+  const fl = (linked ? [] : [{id:'n', label:'الاسم كاملاً', value:u[side + 'Name']}]).concat([{id:'c', label:'الخشم', value:u[side + 'Clan'] || ''}]);
+  const f = await form('تعديل البيانات', fl); if (!f || (!linked && !f.n)) return;
+  if (!linked) u[side + 'Name'] = f.n; u[side + 'Clan'] = f.c; commit();
+}
 async function addChild(k){
   const f = await form('إضافة مولود', [{id:'n', label:'الاسم'}, {id:'g', type:'select', label:'الجنس', options:[['m','ابن'], ['f','ابنة']]}].concat(infoFields()));
   if (!f || !f.n) return;
@@ -225,9 +229,8 @@ function render(){
   if (p.bd) rows.push(`<b>تاريخ الميلاد:</b> ${esc(p.bd)}`);
   const ag = ageOf(p); if (ag) rows.push(`<b>العمر:</b> ${esc(ag)} سنة`);
   const loc = [p.country, p.city].filter(Boolean).join(' - '); if (loc) rows.push(`<b>السكن:</b> ${esc(loc)}`);
-  if (p.clan) rows.push(`<b>خشم البيت:</b> ${esc(p.clan)}`);
   const par = [];
-  if (pu) { const fn = nameOf(pu, 'h'), mn = nameOf(pu, 'w'); if (fn) par.push(`<b>الأب:</b> ${esc(fn)}${clanTxt(pu, 'h', 'بيته')}`); if (mn) par.push(`<b>الأم:</b> ${esc(mn)}${clanTxt(pu, 'w', 'بيتها')}`); }
+  if (pu) { const fn = nameOf(pu, 'h'), mn = nameOf(pu, 'w'); if (fn) par.push(`<b>الأب:</b> ${esc(fn)}`); if (mn) par.push(`<b>الأم:</b> ${esc(mn)}${clanTxt(pu, 'w', 'بيتها')}`); }
   else if (p.momName) par.push(`<b>الأم:</b> ${esc(p.momName)}${p.momClan ? ' — خشم بيتها: ' + esc(p.momClan) : ''}`);
   h += `<div class="info">${par.concat(rows).join('<br>')}</div>`;
   if (a) h += `<div class="adm" style="margin:0 0 14px"><button onclick="renamePerson('${cur}')">✏️ الاسم</button><button onclick="toggleGender('${cur}')">⚥ الجنس</button><button onclick="editInfo('${cur}')">📝 البيانات</button><button onclick="addSpouse('${cur}')">➕ ${male ? 'زوجة' : 'زوج'}</button><button class="del" onclick="delPerson('${cur}')">🗑 حذف</button></div>`;
@@ -240,21 +243,31 @@ function render(){
     if (!ks.length) h += '<div class="empty" style="padding:6px">لا يوجد أبناء بعد</div>';
     ks.forEach(c => { const q = P(c); h += `<div class="kid" onclick="openPerson('${c}')"><span>${q.gender === 'f' ? '👧' : '👦'} ${esc(q.name)}${kidInfo(q)}</span>` + (a ? `<button class="mini del" onclick="event.stopPropagation();delChild('${c}')">🗑</button>` : '<small>(افتح ←)</small>') + '</div>'; });
     h += '</div>';
-    if (a) h += `<div class="adm"><button onclick="addChild('${k}')">➕ مولود</button>${has ? '' : `<button onclick="renameSpouse('${k}','${sp}')">✏️ الاسم والخشم</button>`}<button class="del" onclick="delUnion('${k}')">🗑 الزواج</button></div>`;
+    if (a) h += `<div class="adm"><button onclick="addChild('${k}')">➕ مولود</button><button onclick="renameSpouse('${k}','${sp}')">${has ? '✏️ الخشم' : '✏️ الاسم والخشم'}</button><button class="del" onclick="delUnion('${k}')">🗑 الزواج</button></div>`;
     h += '</div>';
   });
   app.innerHTML = h;
 }
-function homeView(bar){
+const normAr = s => String(s || '').toLowerCase().replace(/[\u064B-\u065F\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').trim();
+function personCard(id, tag){
+  const p = P(id);
+  return `<div class="card" onclick="openPerson('${id}')"><div><div class="name">${p.gender === 'f' ? '👩' : '👨'} ${esc(p.name)}${p.status === 'dead' ? ' ⚫' : ''}</div><div class="tag">${esc(tag)}</div></div><div class="arrow">عرض ←</div></div>`;
+}
+function rootCards(){
   const kidSet = new Set(); Object.values(D.unions).forEach(u => (u.kids || []).forEach(c => kidSet.add(c)));
   const roots = Object.keys(D.people).filter(i => !kidSet.has(i));
-  let h = bar + '<h1>عائلة جكو جار</h1><div class="sub">اختر أحد الأفراد لفتح صفحته</div><div class="list">';
-  roots.forEach(id => {
-    const p = P(id), n = unionsOf(id).reduce((s, [k, u]) => s + (u.kids || []).length, 0);
-    h += `<div class="card" onclick="openPerson('${id}')"><div><div class="name">${p.gender === 'f' ? '👩' : '👨'} ${esc(p.name)}${p.status === 'dead' ? ' ⚫' : ''}</div><div class="tag">${n} من الأبناء</div></div><div class="arrow">عرض ←</div></div>`;
-  });
-  h += '</div>';
-  if (!roots.length) h += '<div class="empty">لا يوجد أشخاص بعد</div>';
+  if (!roots.length) return '<div class="empty">لا يوجد أشخاص بعد</div>';
+  return roots.map(id => personCard(id, unionsOf(id).reduce((n, [k, u]) => n + (u.kids || []).length, 0) + ' من الأبناء')).join('');
+}
+function searchCards(v){
+  const q = normAr(v);
+  const ids = Object.keys(D.people).filter(i => normAr([P(i).name, P(i).city, P(i).country].join(' ')).includes(q)).slice(0, 50);
+  if (!ids.length) return '<div class="empty">لا توجد نتائج</div>';
+  return ids.map(id => { const pu = parentUnion(id), fn = pu ? nameOf(pu, 'h') : ''; const loc = [P(id).country, P(id).city].filter(Boolean).join(' - '); return personCard(id, [fn ? (P(id).gender === 'f' ? 'ابنة ' : 'ابن ') + fn : 'من القائمة الرئيسية', loc].filter(Boolean).join(' · ')); }).join('');
+}
+function doSearch(v){ document.getElementById('rl').innerHTML = v.trim() ? searchCards(v) : rootCards(); }
+function homeView(bar){
+  let h = bar + '<h1>عائلة جكو جار</h1><div class="sub">اختر أحد الأفراد لفتح صفحته</div><input id="q" placeholder="🔍 ابحث بالاسم أو المدينة أو الدولة..." oninput="doSearch(this.value)" style="margin-bottom:14px"><div class="list" id="rl">' + rootCards() + '</div>';
   if (canEdit()) h += '<button class="big" onclick="addRoot()">➕ إضافة شخص جديد</button>';
   if (role === 'admin') h += '<button class="big gray" onclick="openAdmin()">👥 إدارة الحسابات والصلاحيات</button>';
   app.innerHTML = h;
